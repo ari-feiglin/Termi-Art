@@ -32,7 +32,8 @@ void print_canvas(node_t * canvas, pen_t * pen, int width, int height){
 error_code_t change_pen_color(pen_t * pen){
     error_code_t return_value = ERROR_CODE_UNINITIALIZED;
     int error_check = 0;
-    int color = 0;
+    int difference = 0;
+    char * input = NULL;
 
     error_check = change_echo(true);
     if(-1 == error_check){
@@ -43,26 +44,58 @@ error_code_t change_pen_color(pen_t * pen){
     change_cursor(true);
 
     print_color("~~R:~ ", RED, BOLD, RESET);
-    scanf("%d", &color);
-    pen->r = color;
-    print_color("~~G:~ ", GREEN, BOLD, RESET);
-    scanf("%d", &color);
-    pen->g = color;
-    print_color("~~B:~ ", BLUE, BOLD, RESET);
-    scanf("%d", &color);
-    pen->b = color;
-
-    error_check = change_echo(false);
+    error_check = get_raw_input(NULL, &input);
     if(-1 == error_check){
-        return_value = ERROR_CODE_COULDNT_CHANGE_ECHO;
+        return_value = ERROR_CODE_COULDNT_GET_INPUT;
         goto cleanup;
     }
+    difference = strncmp("q", input, 2);
+    if(0 == difference){
+        return_value = ERROR_CODE_SUCCESS;
+        goto cleanup;
+    }
+    pen->r = (int)strtol(input, NULL, 10);
 
-    change_cursor(false);
+    print_color("~~G:~ ", GREEN, BOLD, RESET);
+    error_check = get_raw_input(NULL, &input);
+    if(-1 == error_check){
+        return_value = ERROR_CODE_COULDNT_GET_INPUT;
+        goto cleanup;
+    }
+    difference = strncmp("q", input, 2);
+    if(0 == difference){
+        return_value = ERROR_CODE_SUCCESS;
+        goto cleanup;
+    }
+    pen->g = (int)strtol(input, NULL, 10);
+
+    print_color("~~B:~ ", BLUE, BOLD, RESET);
+    error_check = get_raw_input(NULL, &input);
+    if(-1 == error_check){
+        return_value = ERROR_CODE_COULDNT_GET_INPUT;
+        goto cleanup;
+    }
+    difference = strncmp("q", input, 2);
+    if(0 == difference){
+        return_value = ERROR_CODE_SUCCESS;
+        goto cleanup;
+    }
+    pen->b = (int)strtol(input, NULL, 10);
 
     return_value = ERROR_CODE_SUCCESS;
 
 cleanup:
+    if(NULL != input){
+        free(input);
+    }
+
+    error_check = change_echo(false);
+    if(-1 == error_check){
+        return_value = ERROR_CODE_COULDNT_CHANGE_ECHO;
+    }
+
+    change_cursor(false);
+
     return return_value;
 }
 
@@ -128,6 +161,12 @@ void query_color(node_t * canvas, int width, pen_t pen){
     getchar();
 }
 
+void get_color(node_t * canvas, int width, pen_t * pen){
+    pen->r = canvas[pen->y * width + pen->x].r;
+    pen->g = canvas[pen->y * width + pen->x].g;
+    pen->b = canvas[pen->y * width + pen->x].b;
+}
+
 void fill_region(node_t * canvas, int width, int x1, int y1, pen_t pen){
     int i = 0;
     int j = 0;
@@ -147,14 +186,15 @@ void help(){
     print_color("~COMMANDS:~\n"
                 "~h~: Help (prints this menu)\n"
                 "~w,a,s,d:~ Moves the cursor\n"
-                "~c:~ Change color\n"
+                "~c:~ Change color (entering q will exit change color)\n"
                 "~ (space):~ Draw\n"
                 "~f:~ Type twice to fill entire canvas\n"
                 "~/:~ Fill region (first hit sets start, second hit fills)\n"
                 "~\\:~ Stops fill region (drawing will also stop)\n"
                 "~?:~ Prints the selected pixel's color\n"
+                "~.:~ Changes the pen color to the current selected color on the canvas\n"
                 "~q:~ Quits drawing (allows save)\n\n"
-                "Press any key to return to drawing\n", BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET);
+                "Press any key to return to drawing\n", BOLD, RESET, BOLD, RESET, BOLD, BOLD, RESET, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET, BOLD, RESET);
     
     getchar();
 }
@@ -212,6 +252,7 @@ error_code_t pen_handler(node_t * canvas, int width, int height){
                 }
                 break;
             case '?': query_color(canvas, width, pen); break;
+            case '.': get_color(canvas, width, &pen); break;
             case '/': 
                 if(x1 == -1){
                     x1 = pen.x;
