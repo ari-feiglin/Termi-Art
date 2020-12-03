@@ -204,9 +204,11 @@ error_code_t pen_handler(node_t * canvas, int width, int height){
     int error_check = 0;
     int x1 = -1;
     int y1 = -1;
+    int compression_length = 0;
     pen_t pen = {0};
     char input = 0;
     char * file_name = NULL;
+    char * compressed = NULL;
     FILE * file = NULL;
     bool can_fill = false;
     bool run = true;
@@ -314,6 +316,12 @@ error_code_t pen_handler(node_t * canvas, int width, int height){
         goto cleanup;
     }
 
+    compression_length = compress_canvas(canvas, width, height, &compressed);
+    if(-1 == compression_length){
+        return_value = ERROR_CODE_UNDEFINED;
+        goto cleanup;
+    }
+
     file = fopen(file_name, "w+");
     if(NULL == file){
         return_value = print_error("PEN_HANDLER: Fopen error", ERROR_CODE_COULDNT_OPEN);
@@ -332,7 +340,7 @@ error_code_t pen_handler(node_t * canvas, int width, int height){
         goto cleanup;
     }
 
-    error_check = fwrite(canvas, sizeof(node_t), width * height, file);
+    error_check = fwrite(compressed, 1, compression_length, file);
     if(-1 == error_check){
         return_value = print_error("PEN_HANDLER: Fwrite error", ERROR_CODE_COULDNT_WRITE);
         goto cleanup;
@@ -344,6 +352,9 @@ cleanup:
     if(NULL != file_name){
         free(file_name);
     }
+    if(NULL != compressed){
+        free(compressed);
+    }
 
     if(NULL != file){
         fclose(file);
@@ -351,13 +362,45 @@ cleanup:
     return return_value;
 }
 
-error_code_t open_file(char * file_name, bool edit){
+error_code_t open_file(char * file_name, bool edit, bool is_compressed){
     error_code_t return_value = ERROR_CODE_UNINITIALIZED;
-    FILE * file = NULL;
-    int error_check = 0;
     int width = 0;
     int height = 0;
     node_t * canvas = NULL;
+    char * compressed = NULL;
+
+    return_value = get_canvas(file_name, &canvas, &width, &height, is_compressed);
+    if(ERROR_CODE_SUCCESS != return_value){
+        goto cleanup;
+    }
+
+    if(!edit){
+        print_canvas(canvas, NULL, width, height);
+        return_value = ERROR_CODE_SUCCESS;
+    }
+    else{
+        return_value = pen_handler(canvas, width, height);
+    }
+
+cleanup:
+    if(NULL != canvas){
+        free(canvas);
+    }
+    if(NULL != compressed){
+        free(compressed);
+    }
+
+    return return_value;
+}
+
+error_code_t get_canvas(char * file_name, node_t ** canvas, int * width, int * height, bool compressed){
+    error_code_t return_value = ERROR_CODE_UNINITIALIZED;
+    FILE * file = NULL;
+    int error_check = 0;
+    int canvas_pointer = 0;
+    unsigned char run_length = 0;
+    int i = 0;
+    node_t node = {0};
 
     file = fopen(file_name, "r");
     if(NULL == file){
@@ -365,37 +408,94 @@ error_code_t open_file(char * file_name, bool edit){
         goto cleanup;
     }
 
-    error_check = fread(&width, sizeof(width), 1, file);
+    error_check = fread(width, sizeof(*width), 1, file);
     if(-1 == error_check){
         return_value = print_error("OPEN_FILE: Fread error", ERROR_CODE_COULDNT_READ);
         goto cleanup;
     }
 
-    error_check = fread(&height, sizeof(height), 1, file);
+    error_check = fread(height, sizeof(*height), 1, file);
     if(-1 == error_check){
         return_value = print_error("OPEN_FILE: Fread error", ERROR_CODE_COULDNT_READ);
         goto cleanup;
     }
 
-    canvas = calloc(width * height, sizeof(node_t));
+    *canvas = calloc(*width * *height, sizeof(node_t));
     if(NULL == canvas){
         return_value = print_error("OPEN_FILE: Calloc error", ERROR_CODE_COULDNT_ALLOCATE_MEMORY);
         goto cleanup;
     }
 
-    error_check = fread(canvas, sizeof(node_t), width * height, file);
-    if(-1 == error_check){
-        return_value = print_error("OPEN_FILE: Fread error", ERROR_CODE_COULDNT_READ);
-        goto cleanup;
-    }
+    if(compressed){
+        while(canvas_pointer < *width * *height){
+            error_check = fread(&run_length, sizeof(run_length), 1, file);
+            if(-1 == error_check){
+                return_value = print_error("OPEN_FILE: Fread error", ERROR_CODE_COULDNT_READ);
+                goto cleanup;
+            }
 
-    if(!edit){
-        print_canvas(canvas, NULL, width, height);
+            error_check = fread(&node, sizeof(node), 1, file);
+            if(-1 == error_check){
+                return_value = print_error("OPEN_FILE: Fread error", ERROR_CODE_COULDNT_READ);
+                goto cleanup;
+            }
+
+            for(i=0; i<run_length; i++){
+                memcpy(&((*canvas)[canvas_pointer + i]), &node, sizeof(node));
+            }
+
+            canvas_pointer += run_length;
+        }
     }
     else{
-        pen_handler(canvas, width, height);
+        error_check = fread(*canvas, *height * *width, sizeof(node), file);
+        if(-1 == error_check){
+            return_value = print_error("OPEN_FILE: Fread error", ERROR_CODE_COULDNT_READ);
+            goto cleanup;
+        }
+    }
+
+    return_value = ERROR_CODE_SUCCESS;
+
+cleanup:
+    if(NULL != file){
+        fclose(file);
+    }
+
+    return return_value;
+}
+
+int compress_canvas(node_t * canvas, int width, int height, char ** compression){
+    int canvas_pointer = 0;
+    int compression_length = 0;
+    int i = 0;
+    unsigned char run_length = 0;
+    node_t first_node = {0};
+    node_t current_node = {0};
+
+    while(canvas_pointer < width * height){
+        first_node = canvas[canvas_pointer];
+        current_node = first_node;
+        run_length = 0;
+
+        while(current_node.r == first_node.r && current_node.g == first_node.g && current_node.b == first_node.b){
+            run_length++;
+            canvas_pointer++;
+            current_node = canvas[canvas_pointer];
+        }
+
+        compression_length += 4 * sizeof(unsigned char);
+        *compression = realloc(*compression, compression_length);
+        if(NULL == *compression){
+            compression_length = print_error("COMPRESS CANVAS: Realloc error", -1);
+            goto cleanup;
+        }
+
+
+        (*compression)[compression_length - 4 * sizeof(unsigned char)] = run_length;
+        memcpy(*compression + compression_length - 3*sizeof(unsigned char), &first_node, 3 * sizeof(unsigned char));
     }
 
 cleanup:
-    return return_value;
+    return compression_length;
 }

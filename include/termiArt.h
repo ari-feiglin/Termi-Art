@@ -21,5 +21,7 @@ typedef struct pen_s{
 error_code_t canvas_handler();
 error_code_t pen_handler(node_t * canvas, int width, int height);
 void print_canvas(node_t * canvas, pen_t * pen, int width, int height);
-error_code_t open_file(char * file_name, bool edit);
+error_code_t open_file(char * file_name, bool edit, bool is_compressed);
+error_code_t get_canvas(char * file_name, node_t ** canvas, int * width, int * height, bool compressed);
+error_code_t compress_canvas(node_t * canvas, int width, int height, char ** compression);
 
