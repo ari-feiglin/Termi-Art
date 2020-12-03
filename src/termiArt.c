@@ -303,6 +303,7 @@ error_code_t pen_handler(node_t * canvas, int width, int height){
     if('y' != input){
         print_color("\n~~Are you sure you don't want to save? ([y]/n)~ ", RED, BOLD, RESET);
         input = getchar();
+        getchar();
         
         if('y' != input){
             return_value = ERROR_CODE_SUCCESS;
